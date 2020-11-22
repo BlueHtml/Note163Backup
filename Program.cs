@@ -17,7 +17,7 @@ namespace Note163Backup
         const string DOWN_LOG_PATH = "down", COOKIE_PATH = "cookie";
 
         static readonly CookieContainer _container = new CookieContainer();
-        static readonly HttpClient _client = new HttpClient(new SocketsHttpHandler { CookieContainer = _container });
+        static readonly HttpClient _client = new HttpClient(new SocketsHttpHandler { CookieContainer = _container, AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate });
         static Conf _conf;
         static HttpClient _scClient;
         static async Task Main()
@@ -34,6 +34,7 @@ namespace Note163Backup
 
             string cookie = await File.ReadAllTextAsync(COOKIE_PATH);
             _client.DefaultRequestHeaders.Add("Cookie", cookie);
+            _client.DefaultRequestHeaders.Connection.Add("keep-alive");
 
             Console.WriteLine("验证cookie...");
             var (isOK, rootData) = await GetRootData();
