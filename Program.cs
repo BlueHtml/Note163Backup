@@ -76,19 +76,23 @@ namespace Note163Backup
         {
             if (!fileentry.dir)
             {//文件，下载到本地
-                string result;
-                try
+                string result = string.Empty;
+                for (int i = 0; i < 2; i++)
                 {
-                    HttpResponseMessage rspMsg = await _client.PostAsync(FILE_URL, new StringContent($"fileId={fileentry.id}&version=-1&read=true", Encoding.UTF8, "application/x-www-form-urlencoded"));
-                    using Stream stream = await rspMsg.Content.ReadAsStreamAsync();
-                    Directory.CreateDirectory(Path.GetDirectoryName(fileentry.name));
-                    using FileStream fileStream = File.Create(fileentry.name);
-                    await stream.CopyToAsync(fileStream);
-                    result = "ok";
-                }
-                catch (Exception ex)
-                {
-                    result = $"Ex! {ex.Message}";
+                    try
+                    {
+                        HttpResponseMessage rspMsg = await _client.PostAsync(FILE_URL, new StringContent($"fileId={fileentry.id}&version=-1&read=true", Encoding.UTF8, "application/x-www-form-urlencoded"));
+                        using Stream stream = await rspMsg.Content.ReadAsStreamAsync();
+                        Directory.CreateDirectory(Path.GetDirectoryName(fileentry.name));
+                        using FileStream fileStream = File.Create(fileentry.name);
+                        await stream.CopyToAsync(fileStream);
+                        result = $"ok {i}";
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        result = $"Ex! {i} {ex.Message}";
+                    }
                 }
                 Console.WriteLine($"file {_num}: {result}");
                 await Log($"{fileentry.name}: {result}");
