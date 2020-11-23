@@ -77,23 +77,23 @@ namespace Note163Backup
             if (!fileentry.dir)
             {//文件，下载到本地
                 string result = string.Empty;
-                for (int i = 0; i < 2; i++)
+                try
                 {
-                    try
+                    await RetryRun(async () =>
                     {
                         HttpResponseMessage rspMsg = await _client.PostAsync(FILE_URL, new StringContent($"fileId={fileentry.id}&version=-1&read=true", Encoding.UTF8, "application/x-www-form-urlencoded"));
                         using Stream stream = await rspMsg.Content.ReadAsStreamAsync();
                         Directory.CreateDirectory(Path.GetDirectoryName(fileentry.name));
                         using FileStream fileStream = File.Create(fileentry.name);
                         await stream.CopyToAsync(fileStream);
-                        result = $"ok {i}";
-                        break;
-                    }
-                    catch (Exception ex)
-                    {
-                        result = $"Ex! {i} {ex.Message}";
-                    }
+                        result = "ok";
+                    });
                 }
+                catch (Exception ex)
+                {
+                    result = $"Ex! {ex.Message}";
+                }
+
                 Console.WriteLine($"file {_num}: {result}");
                 await Log($"{fileentry.name}: {result}");
                 _num++;
@@ -103,7 +103,7 @@ namespace Note163Backup
             #region 目录
 
             //获取指定目录下指定数量的文件夹/文件
-            string json = await _client.GetStringAsync(string.Format(DIR_MES_URL, fileentry.id));
+            string json = await RetryRun(() => _client.GetStringAsync(string.Format(DIR_MES_URL, fileentry.id)));
             YdRsp ydRsp = Deserialize<YdRsp>(json);
             foreach (var entry in ydRsp.entries)
             {
@@ -124,6 +124,26 @@ namespace Note163Backup
         static async Task Log(string msg)
         {
             await File.AppendAllTextAsync(DOWN_LOG_PATH, $"{msg}{Environment.NewLine}");
+        }
+
+        static T RetryRun<T>(Func<T> func, int retryNum = 1)
+        {
+            int maxRunNum = retryNum + 1;
+            for (int i = 0; i < maxRunNum; i++)
+            {
+                try
+                {
+                    return func();
+                }
+                catch (Exception)
+                {
+                    if (i == retryNum)
+                    {
+                        throw;
+                    }
+                }
+            }
+            return default;
         }
 
         static string MD5Hash(string str)
