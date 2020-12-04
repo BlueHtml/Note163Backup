@@ -126,7 +126,7 @@ namespace Note163Backup
             await File.AppendAllTextAsync(DOWN_LOG_PATH, $"{msg}{Environment.NewLine}");
         }
 
-        static T RetryRun<T>(Func<T> func, int retryNum = 2)
+        static T RetryRun<T>(Func<T> func, int retryNum = 5)
         {
             int maxRunNum = retryNum + 1;
             for (int i = 0; i < maxRunNum; i++)
