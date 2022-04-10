@@ -1,0 +1,43 @@
+name: Run
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+
+jobs:
+  build:
+
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@main
+      with:
+        path: 'cs'
+    - uses: actions/checkout@main
+      with:
+        repository: '${{ github.repository_owner }}/${{ secrets.REPO }}'
+        path: 'data'
+        token: ${{ secrets.TOKEN }}
+    - name: Run
+      uses: GabrielBB/xvfb-action@v1
+      with:
+        run: dotnet run -p cs
+      env: 
+        CONF: ${{ secrets.CONF }}
+    - name: Push
+      run: |
+        rm -rf data/ROOT
+        mv -f ROOT down data
+        cd data
+        if (git status --porcelain || echo err) | grep -q .; then
+            echo '数据有更新，进行备份'
+            git config user.name actionBot
+            git config user.email github-actions@github.com
+            git add .
+            git commit -m "backup" -q
+            git push
+            echo '备份完成'
+        else
+            echo '无更新，不处理'
+        fi
