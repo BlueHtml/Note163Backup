@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   repository_dispatch:
 
+concurrency: staging_environment
+
 jobs:
   build:
 
@@ -20,9 +22,9 @@ jobs:
         path: 'data'
         token: ${{ secrets.TOKEN }}
     - name: Run
-      uses: GabrielBB/xvfb-action@v1
+      uses: coactions/setup-xvfb@main
       with:
-        run: dotnet run -p cs
+        run: dotnet run --project cs
       env: 
         CONF: ${{ secrets.CONF }}
     - name: Push

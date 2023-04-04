@@ -10,6 +10,7 @@ const string ROOT_ID_URL = "https://note.youdao.com/yws/api/personal/file?method
 const string DIR_MES_URL = "https://note.youdao.com/yws/api/personal/file/{0}?all=true&f=true&len=500&sort=1&isReverse=false&method=listPageByParentId&keyfrom=web";//指定目录下指定数量的数据（文件/文件夹）
 const string FILE_URL = "https://note.youdao.com/yws/api/personal/sync?method=download&keyfrom=web";
 const string DOWN_LOG_PATH = "down";
+const int TIMEOUT_MS = 60_000;
 
 JsonSerializerOptions _options = new()
 {
@@ -18,11 +19,7 @@ JsonSerializerOptions _options = new()
 };
 
 Conf _conf = Deserialize<Conf>(GetEnvValue("CONF"));
-HttpClient _scClient = null;
-if (!string.IsNullOrWhiteSpace(_conf.ScKey))
-{
-    _scClient = new HttpClient();
-}
+HttpClient _scClient = new();
 
 #region redis
 
@@ -54,7 +51,7 @@ if (redisValue.HasValue)
 
 if (isInvalid)
 {
-    cookie = await Login(_conf.Username, _conf.Password);
+    cookie = await GetCookie();
     (isInvalid, rootData) = await IsInvalid(cookie);
     Console.WriteLine("login获取cookie,状态:{0}", isInvalid ? "无效" : "有效");
     if (isInvalid)
@@ -163,7 +160,7 @@ async Task<(bool isInvalid, string rootData)> IsInvalid(string cookie)
     return (!rootData.Contains("fileEntry"), rootData);
 }
 
-async Task<string> Login(string username, string password)
+async Task<string> GetCookie()
 {
     var launchOptions = new LaunchOptions
     {
@@ -172,32 +169,76 @@ async Task<string> Login(string username, string password)
         ExecutablePath = @"/usr/bin/google-chrome"
     };
     var browser = await Puppeteer.LaunchAsync(launchOptions);
-    Page page = await browser.DefaultContext.NewPageAsync();
+    IPage page = await browser.DefaultContext.NewPageAsync();
 
-    await page.GoToAsync("https://note.youdao.com/web", 60_000);
-    await page.WaitForSelectorAsync(".login-btn", new WaitForSelectorOptions { Visible = true });
-    await page.TypeAsync(".login-username", username);
-    await page.TypeAsync(".login-password", password);
-    await Task.Delay(5_000);
-    await page.ClickAsync(".login-btn");
-    await page.WaitForSelectorAsync("ydoc-app", new WaitForSelectorOptions { Visible = true });
+    await page.GoToAsync("https://note.youdao.com/web", TIMEOUT_MS);
 
-    var client = await page.Target.CreateCDPSessionAsync();
-    var ckObj = await client.SendAsync("Network.getAllCookies");
-    var cks = ckObj.Value<JArray>("cookies")
-        .Where(p => p.Value<string>("domain").Contains("note.youdao.com"))
-        .Select(p => $"{p.Value<string>("name")}={p.Value<string>("value")}");
+    bool isLogin = false;
+    string cookie = "fail";
+    try
+    {
+        #region 登录
 
-    await browser.DisposeAsync();
-    return string.Join(';', cks);
+        //登录
+        _ = Login(page);
+        int totalDelayMs = 0, delayMs = 100;
+        while (true)
+        {
+            if ((isLogin = IsLogin(page))
+                || totalDelayMs > TIMEOUT_MS)
+            {
+                break;
+            }
+            await Task.Delay(delayMs);
+            totalDelayMs += delayMs;
+        }
+
+        if (isLogin)
+        {
+            var client = await page.Target.CreateCDPSessionAsync();
+            var ckObj = await client.SendAsync("Network.getAllCookies");
+            var cks = ckObj.Value<JArray>("cookies")
+                .Where(p => p.Value<string>("domain").Contains("note.youdao.com"))
+                .Select(p => $"{p.Value<string>("name")}={p.Value<string>("value")}");
+            cookie = string.Join(';', cks);
+        }
+
+        #endregion
+    }
+    catch (Exception ex)
+    {
+        cookie = "ex";
+        Console.WriteLine($"处理Page时出现异常！{ex.Message}；{ex.StackTrace}");
+    }
+    finally
+    {
+        await browser.DisposeAsync();
+    }
+
+    return cookie;
 }
+
+async Task Login(IPage page)
+{
+    try
+    {
+        string js = await _scClient.GetStringAsync(_conf.JsUrl);
+        await page.EvaluateExpressionAsync(js.Replace("@U", _conf.Username).Replace("@P", _conf.Password));
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Login时出现异常！{ex.Message}. {ex.StackTrace}");
+    }
+}
+
+bool IsLogin(IPage page) => !page.Url.Contains(_conf.LoginStr, StringComparison.OrdinalIgnoreCase);
 
 async Task Notify(string msg, bool isFailed = false)
 {
     Console.WriteLine(msg);
     if (_conf.ScType == "Always" || (isFailed && _conf.ScType == "Failed"))
     {
-        await _scClient?.GetAsync($"https://sc.ftqq.com/{_conf.ScKey}.send?text={msg}");
+        await _scClient.GetAsync($"https://sc.ftqq.com/{_conf.ScKey}.send?text={msg}");
     }
 }
 
@@ -216,6 +257,8 @@ public class Conf
     public string ScType { get; set; }
     public string RdsServer { get; set; }
     public string RdsPwd { get; set; }
+    public string JsUrl { get; set; }
+    public string LoginStr { get; set; }
 }
 
 #endregion
