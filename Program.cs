@@ -93,11 +93,25 @@ async Task Exec(Fileentry fileentry)
             await RetryRun(async () =>
             {
                 HttpResponseMessage rspMsg = await _client.PostAsync(FILE_URL, new StringContent($"fileId={fileentry.id}&version=-1&read=true", Encoding.UTF8, "application/x-www-form-urlencoded"));
-                using Stream stream = await rspMsg.Content.ReadAsStreamAsync();
-                Directory.CreateDirectory(Path.GetDirectoryName(fileentry.name));
-                using FileStream fileStream = File.Create(fileentry.name);
-                await stream.CopyToAsync(fileStream);
-                result = "ok";
+                if (rspMsg.IsSuccessStatusCode)
+                {
+                    using Stream stream = await rspMsg.Content.ReadAsStreamAsync();
+                    Directory.CreateDirectory(Path.GetDirectoryName(fileentry.name));
+                    using FileStream fileStream = File.Create(fileentry.name);
+                    await stream.CopyToAsync(fileStream);
+                    result = "ok";
+                }
+                else
+                {
+                    string oldFilePath = Path.Combine("data", fileentry.name);
+                    FileInfo oldFileInfo = new(oldFilePath);
+                    if (oldFileInfo.Exists)
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(fileentry.name));
+                        oldFileInfo.MoveTo(fileentry.name);
+                    }
+                    result = $"old:{oldFileInfo.Exists}. {(int)rspMsg.StatusCode}:{rspMsg.StatusCode}";
+                }
             });
         }
         catch (Exception ex)
