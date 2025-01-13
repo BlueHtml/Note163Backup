@@ -1,5 +1,4 @@
-﻿using Newtonsoft.Json.Linq;
-using Note163Backup;
+﻿using Note163Backup;
 using PuppeteerSharp;
 using StackExchange.Redis;
 using System.Net;
@@ -209,11 +208,11 @@ async Task<string> GetCookie()
 
         if (isLogin)
         {
-            var client = await page.Target.CreateCDPSessionAsync();
+            var client = await page.CreateCDPSessionAsync();
             var ckObj = await client.SendAsync("Network.getAllCookies");
-            var cks = ckObj.Value<JArray>("cookies")
-                .Where(p => p.Value<string>("domain").Contains("note.youdao.com"))
-                .Select(p => $"{p.Value<string>("name")}={p.Value<string>("value")}");
+            var cks = ckObj?.GetProperty("cookies").EnumerateArray()
+                .Where(p => p.GetProperty("domain").GetString().Contains("note.youdao.com"))
+                .Select(p => $"{p.GetProperty("name").GetString()}={p.GetProperty("value").GetString()}");
             cookie = string.Join(';', cks);
         }
 
