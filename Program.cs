@@ -1,5 +1,4 @@
 ﻿using Note163Backup;
-using PuppeteerSharp;
 using StackExchange.Redis;
 using System.Net;
 using System.Text;
@@ -9,7 +8,6 @@ const string ROOT_ID_URL = "https://note.youdao.com/yws/api/personal/file?method
 const string DIR_MES_URL = "https://note.youdao.com/yws/api/personal/file/{0}?all=true&f=true&len=500&sort=1&isReverse=false&method=listPageByParentId&keyfrom=web";//指定目录下指定数量的数据（文件/文件夹）
 const string FILE_URL = "https://note.youdao.com/yws/api/personal/sync?method=download&keyfrom=web";
 const string DOWN_LOG_PATH = "down";
-const int TIMEOUT_MS = 60_000;
 
 JsonSerializerOptions _options = new()
 {
@@ -40,19 +38,18 @@ string cookie = string.Empty;
 bool isInvalid = true; string rootData = string.Empty;
 
 string redisKey = $"Note163_{_conf.Username}";
-var redisValue = await db.StringGetAsync(redisKey);
-if (redisValue.HasValue)
-{
-    cookie = redisValue.ToString();
-    (isInvalid, rootData) = await IsInvalid(cookie);
-    Console.WriteLine("redis获取cookie,状态:{0}", isInvalid ? "无效" : "有效");
-}
+cookie = await GetCookie(redisKey);
+(isInvalid, rootData) = await IsInvalid(cookie);
+Console.WriteLine("redis获取cookie,状态:{0}", isInvalid ? "无效" : "有效");
 
 if (isInvalid)
 {
-    cookie = await GetCookie();
+    Console.WriteLine("刷新Cookie");
+    await CommandHelper.ExecCommand(_conf.RefreshCookieCommand);
+
+    cookie = await GetCookie(redisKey);
     (isInvalid, rootData) = await IsInvalid(cookie);
-    Console.WriteLine("login获取cookie,状态:{0}", isInvalid ? "无效" : "有效");
+    Console.WriteLine("refresh获取cookie,状态:{0}", isInvalid ? "无效" : "有效");
     if (isInvalid)
     {//Cookie失效
         await Notify($"账号{_conf.Task}Cookie失效，请检查登录状态！", true);
@@ -173,85 +170,24 @@ async Task<(bool isInvalid, string rootData)> IsInvalid(string cookie)
     return (!rootData.Contains("fileEntry"), rootData);
 }
 
-async Task<string> GetCookie()
+async Task<string> GetCookie(string redisKey)
 {
-    var launchOptions = new LaunchOptions
+    string cookie = string.Empty;
+    var redisValue = await db.StringGetAsync(redisKey);
+    if (redisValue.HasValue)
     {
-        Headless = false,
-        DefaultViewport = null,
-        ExecutablePath = @"/usr/bin/google-chrome"
-    };
-    var browser = await Puppeteer.LaunchAsync(launchOptions);
-    IPage page = await browser.DefaultContext.NewPageAsync();
-
-    await page.GoToAsync("https://note.youdao.com/web", TIMEOUT_MS);
-
-    bool isLogin = false;
-    string cookie = "fail";
-    try
-    {
-        #region 登录
-
-        //登录
-        _ = Login(page);
-        int totalDelayMs = 0, delayMs = 100;
-        while (true)
-        {
-            if ((isLogin = IsLogin(page))
-                || totalDelayMs > TIMEOUT_MS)
-            {
-                break;
-            }
-            await Task.Delay(delayMs);
-            totalDelayMs += delayMs;
-        }
-
-        if (isLogin)
-        {
-            var client = await page.CreateCDPSessionAsync();
-            var ckObj = await client.SendAsync("Network.getAllCookies");
-            var cks = ckObj?.GetProperty("cookies").EnumerateArray()
-                .Where(p => p.GetProperty("domain").GetString().Contains("note.youdao.com"))
-                .Select(p => $"{p.GetProperty("name").GetString()}={p.GetProperty("value").GetString()}");
-            cookie = string.Join(';', cks);
-        }
-
-        #endregion
-    }
-    catch (Exception ex)
-    {
-        cookie = "ex";
-        Console.WriteLine($"处理Page时出现异常！{ex.Message}；{ex.StackTrace}");
-    }
-    finally
-    {
-        await browser.DisposeAsync();
+        cookie = redisValue.ToString();
     }
 
     return cookie;
 }
 
-async Task Login(IPage page)
-{
-    try
-    {
-        string js = await _scClient.GetStringAsync(_conf.JsUrl);
-        await page.EvaluateExpressionAsync(js.Replace("@U", _conf.Username).Replace("@P", _conf.Password));
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Login时出现异常！{ex.Message}. {ex.StackTrace}");
-    }
-}
-
-bool IsLogin(IPage page) => !page.Url.Contains(_conf.LoginStr, StringComparison.OrdinalIgnoreCase);
-
 async Task Notify(string msg, bool isFailed = false)
 {
     Console.WriteLine(msg);
-    if (_conf.ScType == "Always" || (isFailed && _conf.ScType == "Failed"))
+    if (_conf.NotifyType == "Always" || (isFailed && _conf.NotifyType == "Failed"))
     {
-        await _scClient.GetAsync($"https://sc.ftqq.com/{_conf.ScKey}.send?text={msg}");
+        await CommandHelper.ExecCommand(_conf.NotifyCommand.Replace("$title", "Note163Backup").Replace("$msg", msg));
     }
 }
 
@@ -266,12 +202,11 @@ public class Conf
     public string Task { get; set; }
     public string Username { get; set; }
     public string Password { get; set; }
-    public string ScKey { get; set; }
-    public string ScType { get; set; }
+    public string NotifyType { get; set; }
+    public string NotifyCommand { get; set; }
     public string RdsServer { get; set; }
     public string RdsPwd { get; set; }
-    public string JsUrl { get; set; }
-    public string LoginStr { get; set; }
+    public string RefreshCookieCommand { get; set; }
 }
 
 #endregion
