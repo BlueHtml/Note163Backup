@@ -45,7 +45,7 @@ Console.WriteLine("redis获取cookie,状态:{0}", isInvalid ? "无效" : "有效
 if (isInvalid)
 {
     Console.WriteLine("刷新Cookie");
-    await CommandHelper.ExecCommand(_conf.RefreshCookieCommand);
+    await CommandHelper.ExecCommand(_conf.RefreshCookieCommands);
 
     cookie = await GetCookie(redisKey);
     (isInvalid, rootData) = await IsInvalid(cookie);
@@ -206,7 +206,7 @@ public class Conf
     public string NotifyCommand { get; set; }
     public string RdsServer { get; set; }
     public string RdsPwd { get; set; }
-    public string RefreshCookieCommand { get; set; }
+    public string[] RefreshCookieCommands { get; set; }
 }
 
 #endregion

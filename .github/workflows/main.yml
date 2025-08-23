@@ -22,9 +22,7 @@ jobs:
         path: 'data'
         token: ${{ secrets.TOKEN }}
     - name: Run
-      uses: coactions/setup-xvfb@main
-      with:
-        run: dotnet run --project cs
+      run: dotnet run --project cs
       env: 
         CONF: ${{ secrets.CONF }}
     - name: Push
